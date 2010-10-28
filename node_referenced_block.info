@@ -1,0 +1,4 @@
+;$Id$
+name = "Node Reference Block"
+core = 6.x
+version = 0.1alpha

@@ -1,0 +1,81 @@
+<?php
+/*******************************************************************************
+ * 
+ * Node Reference Block
+ *
+ * This module is designed to query all node reference fields in a Drupal
+ * install and display a link to their contents in a block if the current page
+ * is the referenced node.
+ *
+ * 09/7/2010 John P. Warren
+ * 
+ ******************************************************************************/
+function node_referenced_block_block($op = 'list', $delta = 0, $edit=array()){
+  switch ($op){
+    case 'list':
+      $blocks[0]['info'] = t('Node Reference Block');
+      return $blocks;
+    case 'view':
+      //Access control and node check short circuit
+      if (user_access('view content') && arg(0) == 'node' && is_numeric(arg(1))){
+        $current_nid = arg(1);
+        $related_node_list = cck_query_for_content_tables($current_nid);
+        //Make sure the list isn't empty
+        if( !empty($related_node_list) ){
+          $output = array();
+          foreach($related_node_list as $value){
+            $this_node = node_load($value);
+            $output[] = '<a href="?q=node/'.$value.'">'.$this_node->title.'</a>';
+          }
+          $block['subject'] = t('Related Posts');
+          $block['content'] = theme('item_list', $output);
+          return $block;
+        }
+      }
+  }
+}
+
+/**
+ * This function does most of the heavy lifting.  I'd like to try to get it down
+ * to fewer queries, but this seems to be the minimum needed to get the
+ * necessary data.
+ * @param
+ *  integer, The current node ID
+ * @return
+ *  an array of NID's that reference the current node
+ */
+function cck_query_for_content_tables($current_nid){
+  //Collect a list of all cck tables
+  $sql = 'SHOW TABLES LIKE "content%%"';
+  $result = db_query($sql);
+  $table_list = array();
+  while( $data = db_result($result) ){
+    $table_list[] = $data;
+  }
+  //get the fields for the tables
+  $nid_field_name_sql = "SHOW COLUMNS FROM %s";
+  $field_names_list = array();
+  foreach ($table_list as $table_to_query){
+    $nid_field_name_result = db_query($nid_field_name_sql, $table_to_query);
+    while( $data = db_fetch_array($nid_field_name_result) ){
+      $field_names_list["$table_to_query"] = $data;
+    }
+  }
+  //Store only the fields that end in 'nid' in a keyed array
+  $nid_field_names_list = array();
+  foreach($field_names_list as $key =>$field_name_values){
+    if (preg_match('/nid$/', $field_name_values['Field']) > 0 && $field_name_values['Field'] !== 'nid'){
+      $nid_field_names_list[$key] = $field_name_values['Field'];
+    }
+  }
+  
+  //Pull all the nid values from those fields where their referenced node is the same as current node
+  $node_collection_sql = 'SELECT nid FROM %s WHERE %s=%s';
+  foreach( $nid_field_names_list as $table_key => $field_value){
+    $node_collection_query_object = db_query($node_collection_sql, $table_key, $field_value, $current_nid);
+    while( $data = db_result($node_collection_query_object) ){
+      $nodes_that_reference_current_node[] = $data;
+    }
+  }
+  return $nodes_that_reference_current_node;
+}
